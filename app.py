@@ -3,6 +3,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
 import re
+import json
 from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
@@ -23,14 +24,28 @@ ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'HODCSE')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'HODCSE@123')
 ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
 
-# --- Initialize Firebase ---
+# --- Initialize Firebase (supports FIREBASE_SERVICE_ACCOUNT env var for Render) ---
 SERVICE_ACCOUNT_PATH = "serviceAccountKey.json"
 
-if not os.path.exists(SERVICE_ACCOUNT_PATH):
-    print(f"⚠️  WARNING: {SERVICE_ACCOUNT_PATH} not found!")
-    print("   Please place your serviceAccountKey.json in the project root.")
+service_account_info = os.getenv('FIREBASE_SERVICE_ACCOUNT')
 
-cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+if service_account_info and service_account_info.strip().startswith('{'):
+    try:
+        service_account_dict = json.loads(service_account_info)
+        cred = credentials.Certificate(service_account_dict)
+        print("✅ Firebase initialized from FIREBASE_SERVICE_ACCOUNT env variable")
+    except json.JSONDecodeError as e:
+        print(f"❌ ERROR: FIREBASE_SERVICE_ACCOUNT is not valid JSON: {e}")
+        raise
+elif os.path.exists(SERVICE_ACCOUNT_PATH):
+    cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+    print(f"✅ Firebase initialized from {SERVICE_ACCOUNT_PATH}")
+else:
+    print(f"❌ ERROR: Neither FIREBASE_SERVICE_ACCOUNT env var nor {SERVICE_ACCOUNT_PATH} found!")
+    raise FileNotFoundError(
+        f"Set FIREBASE_SERVICE_ACCOUNT environment variable or place {SERVICE_ACCOUNT_PATH} in project root."
+    )
+
 firebase_admin.initialize_app(cred, {
     'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'crlrvote-f6453.firebasestorage.app')
 })
@@ -41,7 +56,6 @@ bucket = storage.bucket()
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# Ensure upload folder exists (for local dev only)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # ============================================================
@@ -120,21 +134,6 @@ def get_all_voters():
         result.append(data)
     return result
 
-def get_all_votes():
-    docs = db.collection('votes').stream()
-    result = []
-    for doc in docs:
-        data = doc.to_dict()
-        data['id'] = doc.id
-        result.append(data)
-    return result
-
-def count_votes_for_candidate(candidate_id, post):
-    """Count votes where cr_candidate_id or lr_candidate_id matches candidate_id"""
-    field = 'cr_candidate_id' if post == 'CR' else 'lr_candidate_id'
-    docs = db.collection('votes').where(field, '==', candidate_id).stream()
-    return sum(1 for _ in docs)
-
 # ============================================================
 # ROUTES
 # ============================================================
@@ -156,7 +155,6 @@ def candidate_register():
         confirm_password = request.form.get('confirm_password')
         photo = request.files.get('photo')
 
-        # Validation
         if not all([name, roll_no, department, year, post, password, confirm_password]):
             flash('All fields are required.', 'error')
             return redirect(url_for('candidate_register'))
@@ -173,7 +171,6 @@ def candidate_register():
             flash('Password must be at least 6 characters.', 'error')
             return redirect(url_for('candidate_register'))
 
-        # Check if candidate already exists
         existing = get_candidate_by_roll_no(roll_no)
         if existing and existing.get('can_register_again') == 0:
             flash('This candidate has been rejected by admin. Permission to re-register is required before registration.', 'error')
@@ -186,7 +183,6 @@ def candidate_register():
                 flash('Only image files (png, jpg, jpeg, gif) are allowed.', 'error')
                 return redirect(url_for('candidate_register'))
             photo_filename = secure_filename(f"{roll_no}_{photo.filename}")
-            # Save locally first, then upload to Firebase Storage
             local_path = os.path.join(app.config['UPLOAD_FOLDER'], photo_filename)
             photo.save(local_path)
             try:
@@ -194,7 +190,6 @@ def candidate_register():
                 blob.upload_from_filename(local_path)
                 blob.make_public()
                 photo_url = blob.public_url
-                # Clean up local file after upload
                 os.remove(local_path)
             except Exception as e:
                 flash(f'Photo upload failed: {str(e)}', 'error')
@@ -249,6 +244,20 @@ def candidate_logout():
     flash('You have been logged out.', 'info')
     return redirect(url_for('index'))
 
+def get_all_votes():
+    docs = db.collection('votes').stream()
+    result = []
+    for doc in docs:
+        data = doc.to_dict()
+        data['id'] = doc.id
+        result.append(data)
+    return result
+
+def count_votes_for_candidate(candidate_id, post):
+    field = 'cr_candidate_id' if post == 'CR' else 'lr_candidate_id'
+    docs = db.collection('votes').where(field, '==', candidate_id).stream()
+    return sum(1 for _ in docs)
+
 # ---------- VOTER LOGIN ----------
 @app.route('/voter/login', methods=['GET', 'POST'])
 def voter_login():
@@ -273,44 +282,38 @@ def voter_login():
             flash('Roll number not found in the voter list.', 'error')
             return redirect(url_for('voter_login'))
 
-        # Check if voter is rejected
         if voter.get('voter_status') == 'rejected':
             flash('Your voting access has been revoked by admin. You cannot vote.', 'error')
             return redirect(url_for('voter_login'))
 
-        # If voter has no password set yet, redirect to set password page
         if not voter.get('password_hash'):
             session['voter_roll_no'] = voter['roll_no']
             session['voter_name'] = voter['name']
             flash('Please set your 6-digit voting password.', 'info')
             return redirect(url_for('voter_set_password'))
 
-        # Voter has password - check if password provided in this POST
         if password:
-            # Verify password
             if not check_password_hash(voter['password_hash'], password):
                 flash('Invalid password.', 'error')
                 return render_template('voter_login.html', show_password=True, roll_no=roll_no)
 
-            # Password correct - login successful
             session['voter_roll_no'] = voter['roll_no']
             session['voter_name'] = voter['name']
             session.pop('voter_roll_no_temp', None)
             flash(f'Welcome back, {voter["name"]}!', 'success')
             return redirect(url_for('voter_dashboard'))
         else:
-            # No password provided yet - show password field with roll_no preserved
             session['voter_roll_no_temp'] = roll_no
             return render_template('voter_login.html', show_password=True, roll_no=roll_no)
 
-    # GET request - check if returning to show password field
     if session.get('voter_roll_no_temp'):
         roll_no = session.pop('voter_roll_no_temp')
         return render_template('voter_login.html', show_password=True, roll_no=roll_no)
 
     return render_template('voter_login.html', show_password=False)
 
-# ---------- VOTER SET PASSWORD (First Time) ----------
+
+# ---------- VOTER SET PASSWORD ----------
 @app.route('/voter/set-password', methods=['GET', 'POST'])
 def voter_set_password():
     if 'voter_roll_no' not in session:
@@ -345,7 +348,7 @@ def voter_set_password():
     return render_template('voter_set_password.html')
 
 
-# ---------- VOTER DASHBOARD (VOTE PAGE) ----------
+# ---------- VOTER DASHBOARD ----------
 @app.route('/voter/dashboard')
 def voter_dashboard():
     if 'voter_roll_no' not in session:
@@ -360,23 +363,19 @@ def voter_dashboard():
         flash('Voter not found.', 'error')
         return redirect(url_for('voter_login'))
 
-    # Check if voter is rejected
     if voter.get('voter_status') == 'rejected':
         session.pop('voter_roll_no', None)
         session.pop('voter_name', None)
         flash('Your voting access has been revoked by the admin.', 'error')
         return redirect(url_for('voter_login'))
 
-    # Check if already voted
     if voter.get('has_voted'):
         flash('You have already voted. You cannot vote again.', 'info')
         return render_template('voter_already_voted.html', voter=voter)
 
-    # Get approved candidates for CR and LR
     cr_candidates = get_approved_candidates(post='CR')
     lr_candidates = get_approved_candidates(post='LR')
 
-    # Sort by name
     cr_candidates.sort(key=lambda x: x.get('name', ''))
     lr_candidates.sort(key=lambda x: x.get('name', ''))
 
@@ -399,7 +398,6 @@ def cast_vote():
         flash('You have already voted. You cannot vote again.', 'error')
         return redirect(url_for('voter_dashboard'))
 
-    # Record the vote
     vote_data = {
         'roll_no': roll_no,
         'cr_candidate_id': cr_candidate_id if cr_candidate_id else None,
@@ -408,7 +406,6 @@ def cast_vote():
     }
     db.collection('votes').add(vote_data)
 
-    # Mark voter as voted
     db.collection('voters').document(roll_no).update({
         'has_voted': 1,
         'voted_at': datetime.now().isoformat()
@@ -429,11 +426,10 @@ def voter_logout():
     return redirect(url_for('index'))
 
 
-# ---------- VIEW ALL CANDIDATES (Public - Only Approved) ----------
+# ---------- VIEW ALL CANDIDATES ----------
 @app.route('/candidates')
 def view_candidates():
     candidates = get_approved_candidates()
-    # Sort by created_at descending
     candidates.sort(key=lambda x: x.get('created_at', ''), reverse=True)
     return render_template('view_candidates.html', candidates=candidates)
 
@@ -455,7 +451,7 @@ def admin_login():
     return render_template('admin_login.html')
 
 
-# ---------- ADMIN DASHBOARD (Pending Approvals) ----------
+# ---------- ADMIN DASHBOARD ----------
 @app.route('/admin/dashboard')
 def admin_dashboard():
     if not session.get('admin_logged_in'):
@@ -473,7 +469,7 @@ def admin_dashboard():
                            pending=pending, approved=approved, rejected=rejected,
                            total_voters=total_voters, voted_count=voted_count)
 
-# ---------- ADMIN VOTING RECORDS (Who Voted For Whom) ----------
+# ---------- ADMIN VOTING RECORDS ----------
 @app.route('/admin/voting-records')
 def admin_voting_records():
     if not session.get('admin_logged_in'):
@@ -481,7 +477,6 @@ def admin_voting_records():
         return redirect(url_for('admin_login'))
 
     votes = get_all_votes()
-    # Build lookup maps for candidates and voters
     candidates_map = {}
     for c in get_all_candidates():
         candidates_map[c['id']] = c
@@ -513,20 +508,18 @@ def admin_voting_records():
             'lr_candidate_name': lr_name
         })
 
-    # Sort by voted_at descending
     voting_records.sort(key=lambda x: x.get('voted_at', ''), reverse=True)
 
     return render_template('admin_voting_records.html', voting_records=voting_records)
 
 
-# ---------- ADMIN REJECT A VOTE (Remove suspicious vote & reset voter) ----------
+# ---------- ADMIN REJECT A VOTE ----------
 @app.route('/admin/reject-vote/<vote_id>')
 def admin_reject_vote(vote_id):
     if not session.get('admin_logged_in'):
         flash('Please login as admin.', 'error')
         return redirect(url_for('admin_login'))
 
-    # Find the vote by document ID
     vote_doc = db.collection('votes').document(vote_id).get()
     if not vote_doc.exists:
         flash('Vote not found.', 'error')
@@ -535,10 +528,7 @@ def admin_reject_vote(vote_id):
     vote_data = vote_doc.to_dict()
     roll_no = vote_data.get('roll_no')
 
-    # Delete the vote record
     db.collection('votes').document(vote_id).delete()
-
-    # Reset the voter's has_voted status so they can vote again
     db.collection('voters').document(roll_no).update({
         'has_voted': 0,
         'voted_at': None
@@ -546,6 +536,7 @@ def admin_reject_vote(vote_id):
 
     flash('Vote rejected and voter status reset. The voter can vote again.', 'info')
     return redirect(url_for('admin_voting_records'))
+
 
 # ---------- ADMIN APPROVE CANDIDATE ----------
 @app.route('/admin/approve/<candidate_id>')
@@ -572,10 +563,7 @@ def admin_reject(candidate_id):
         return redirect(url_for('admin_dashboard'))
 
     if request.method == 'POST':
-        # Check if admin wants to allow re-registration
         allow_re_register = request.form.get('allow_re_register') == 'on'
-
-        # Update candidate status to rejected
         db.collection('candidates').document(candidate_id).update({
             'status': 'rejected',
             'can_register_again': 1 if allow_re_register else 0
@@ -587,24 +575,21 @@ def admin_reject(candidate_id):
             flash(f'{candidate["name"]} has been rejected.', 'info')
         return redirect(url_for('admin_dashboard'))
 
-    # GET request - show confirmation with re-registration option
     return render_template('admin_reject_confirm.html', candidate=candidate)
 
 
-# ---------- ADMIN REMOVE CANDIDATE (Delete completely) ----------
+# ---------- ADMIN REMOVE CANDIDATE ----------
 @app.route('/admin/remove/<candidate_id>')
 def admin_remove(candidate_id):
     if not session.get('admin_logged_in'):
         flash('Please login as admin.', 'error')
         return redirect(url_for('admin_login'))
 
-    # Delete any votes associated with this candidate first
     votes = get_all_votes()
     for v in votes:
         if v.get('cr_candidate_id') == candidate_id or v.get('lr_candidate_id') == candidate_id:
             db.collection('votes').document(v['id']).delete()
 
-    # Delete the candidate
     db.collection('candidates').document(candidate_id).delete()
 
     flash('Candidate removed completely!', 'success')
@@ -630,12 +615,10 @@ def admin_clear_candidates():
         return redirect(url_for('admin_login'))
 
     if request.method == 'POST':
-        # Clear votes first (they reference candidates)
         votes = get_all_votes()
         for v in votes:
             db.collection('votes').document(v['id']).delete()
 
-        # Delete all candidates
         candidates = get_all_candidates()
         for c in candidates:
             db.collection('candidates').document(c['id']).delete()
@@ -643,10 +626,10 @@ def admin_clear_candidates():
         flash('All candidate data has been cleared. Candidates can now re-register with the same roll numbers.', 'success')
         return redirect(url_for('admin_dashboard'))
 
-    # GET request - show confirmation
     total_candidates = len(get_all_candidates())
     total_votes = len(get_all_votes())
     return render_template('admin_clear_candidates.html', total_candidates=total_candidates, total_votes=total_votes)
+
 
 # ---------- ADMIN: ADD VOTERS ----------
 @app.route('/admin/add-voters', methods=['GET', 'POST'])
@@ -671,7 +654,6 @@ def admin_add_voters():
         for i, roll in enumerate(roll_list):
             name = name_list[i] if i < len(name_list) else f'Student {roll}'
             try:
-                # Check if voter already exists
                 existing = get_voter_by_roll_no(roll)
                 if existing:
                     skipped += 1
@@ -696,7 +678,6 @@ def admin_add_voters():
 
     return render_template('admin_add_voters.html')
 
-
 # ---------- ADMIN: DECLARE RESULTS (Login) ----------
 @app.route('/admin/declare-results', methods=['GET', 'POST'])
 def admin_declare_results_login():
@@ -708,7 +689,6 @@ def admin_declare_results_login():
             flash('Please enter both Admin ID and Password.', 'error')
             return render_template('admin_declare_login.html')
 
-        # Verify admin credentials
         if admin_id == ADMIN_USERNAME and check_password_hash(ADMIN_PASSWORD_HASH, admin_password):
             session['admin_results_verified'] = True
             flash('Admin verified. Accessing election results...', 'success')
@@ -719,6 +699,7 @@ def admin_declare_results_login():
 
     return render_template('admin_declare_login.html')
 
+
 # ---------- ADMIN: SHOW RESULTS ----------
 @app.route('/admin/results')
 def admin_results():
@@ -726,19 +707,16 @@ def admin_results():
         flash('Please authenticate first.', 'error')
         return redirect(url_for('admin_declare_results_login'))
 
-    # Get CR candidates with vote counts
     cr_candidates = get_approved_candidates(post='CR')
     for c in cr_candidates:
         c['vote_count'] = count_votes_for_candidate(c['id'], 'CR')
     cr_candidates.sort(key=lambda x: (-x['vote_count'], x.get('name', '')))
 
-    # Get LR candidates with vote counts
     lr_candidates = get_approved_candidates(post='LR')
     for c in lr_candidates:
         c['vote_count'] = count_votes_for_candidate(c['id'], 'LR')
     lr_candidates.sort(key=lambda x: (-x['vote_count'], x.get('name', '')))
 
-    # Get detailed voting log
     votes = get_all_votes()
     candidates_map = {c['id']: c for c in get_all_candidates()}
 
@@ -759,7 +737,6 @@ def admin_results():
         })
     voting_log.sort(key=lambda x: x.get('voted_at', ''))
 
-    # Calculate totals
     total_cr_votes = sum(c['vote_count'] for c in cr_candidates)
     total_lr_votes = sum(c['vote_count'] for c in lr_candidates)
     total_votes = total_cr_votes + total_lr_votes
@@ -777,19 +754,16 @@ def admin_download_results():
         flash('Please authenticate first.', 'error')
         return redirect(url_for('admin_declare_results_login'))
 
-    # Get CR candidates with vote counts
     cr_candidates = get_approved_candidates(post='CR')
     for c in cr_candidates:
         c['vote_count'] = count_votes_for_candidate(c['id'], 'CR')
     cr_candidates.sort(key=lambda x: (-x['vote_count'], x.get('name', '')))
 
-    # Get LR candidates with vote counts
     lr_candidates = get_approved_candidates(post='LR')
     for c in lr_candidates:
         c['vote_count'] = count_votes_for_candidate(c['id'], 'LR')
     lr_candidates.sort(key=lambda x: (-x['vote_count'], x.get('name', '')))
 
-    # Get detailed voting log
     votes = get_all_votes()
     candidates_map = {c['id']: c for c in get_all_candidates()}
 
@@ -806,7 +780,6 @@ def admin_download_results():
             'lr_name': lr_name
         })
 
-    # Build CSV content
     csv_content = "COLLEGE CR & LR ELECTION RESULTS\n"
     csv_content += "=" * 50 + "\n\n"
 
@@ -836,7 +809,6 @@ def admin_download_results():
         headers={'Content-Disposition': 'attachment; filename=election_results.csv'}
     )
 
-
 # ---------- ADMIN: VIEW ALL VOTERS ----------
 @app.route('/admin/view-voters')
 def admin_view_voters():
@@ -845,7 +817,6 @@ def admin_view_voters():
         return redirect(url_for('admin_login'))
 
     voters = get_all_voters()
-    # Sort by roll_no
     voters.sort(key=lambda x: x.get('roll_no', ''))
     return render_template('admin_view_voters.html', voters=voters)
 
