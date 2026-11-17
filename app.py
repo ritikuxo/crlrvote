@@ -67,6 +67,7 @@ def get_candidate_by_roll_no(roll_no):
     if doc.exists:
         data = doc.to_dict()
         data['id'] = doc.id
+        data['roll_no'] = doc.id
         return data
     return None
 
@@ -75,6 +76,7 @@ def get_candidate_by_id(doc_id):
     if doc.exists:
         data = doc.to_dict()
         data['id'] = doc.id
+        data['roll_no'] = doc.id
         return data
     return None
 
@@ -83,6 +85,7 @@ def get_voter_by_roll_no(roll_no):
     if doc.exists:
         data = doc.to_dict()
         data['id'] = doc.id
+        data['roll_no'] = doc.id  # Firestore doc ID = roll_no (was stripped during migration)
         return data
     return None
 
@@ -131,6 +134,7 @@ def get_all_voters():
     for doc in docs:
         data = doc.to_dict()
         data['id'] = doc.id
+        data['roll_no'] = doc.id  # Firestore doc ID = roll_no (was stripped during migration)
         result.append(data)
     return result
 
