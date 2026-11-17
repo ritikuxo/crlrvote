@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Already Voted | Election Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 20px; display: flex; align-items: center; justify-content: center; }
+        .container { width: 100%; max-width: 400px; }
+        .card { background: white; border-radius: 16px; padding: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); text-align: center; }
+        header { margin-bottom: 30px; }
+        header h1 { color: #e74c3c; font-size: 1.8rem; margin-bottom: 8px; }
+        header p { color: #7f8c8d; }
+        .info { background: #f8d7da; color: #721c24; padding: 20px; border-radius: 10px; border: 1px solid #f5c6cb; margin-bottom: 30px; }
+        .info p { margin-bottom: 8px; }
+        .btn { display: inline-block; padding: 12px 25px; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.3s; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-primary:hover { background: #2980b9; }
+        .btn-secondary { background: #95a5a6; color: white; margin-left: 10px; }
+        .btn-secondary:hover { background: #7f8c8d; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <header>
+                <h1>✅ Already Voted</h1>
+                <p>You have already cast your vote</p>
+            </header>
+
+            <div class="info">
+                <p><strong>Name:</strong> {{ voter['name'] }}</p>
+                <p><strong>Roll Number:</strong> {{ voter['roll_no'] }}</p>
+                <p><strong>Status:</strong> Vote already recorded</p>
+            </div>
+
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

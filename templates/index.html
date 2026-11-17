@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>College CR & LR Election Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 20px; display: flex; align-items: center; justify-content: center; }
+        .container { width: 100%; max-width: 1200px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 40px; }
+        header h1 { color: #2c3e50; font-size: 2.5rem; margin-bottom: 10px; }
+        header p { color: #7f8c8d; font-size: 1.1rem; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 40px 20px; }
+        .container { width: 100%; max-width: 1200px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 50px; }
+        header h1 { color: #2c3e50; font-size: 2.5rem; margin-bottom: 10px; font-weight: 700; }
+        header p { color: #7f8c8d; font-size: 1.1rem; }
+        .panels { display: flex; gap: 30px; flex-wrap: wrap; justify-content: center; align-items: stretch; }
+        .panel { flex: 1; min-width: 280px; max-width: 360px; background: white; border-radius: 20px; box-shadow: 0 15px 50px rgba(0,0,0,0.1); overflow: hidden; transition: all 0.4s ease; display: flex; flex-direction: column; }
+        .panel:hover { transform: translateY(-10px); box-shadow: 0 25px 60px rgba(0,0,0,0.15); }
+        .panel-header { padding: 30px 25px; color: white; text-align: center; }
+        .badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+        .badge-open { background: #d4edda; color: #155724; }
+        .badge-active { background: #cce5ff; color: #004085; }
+        .badge-admin { background: #f8d7da; color: #721c24; }
+        .panel-header h2 { font-size: 1.8rem; margin-bottom: 8px; font-weight: 700; }
+        .panel-header p { font-size: 0.95rem; opacity: 0.95; margin: 0; }
+        .panel-body { padding: 30px 25px; display: flex; flex-direction: column; gap: 15px; flex: 1; }
+        .btn { width: 100%; padding: 15px; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; text-align: left; text-decoration: none; display: block; }
+        .btn:hover { transform: translateX(8px); opacity: 0.95; text-decoration: none; }
+        .btn i { margin-right: 12px; width: 24px; text-align: center; }
+        .candidate .panel-header { background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); }
+        .candidate .btn { background: #f8f9fa; color: #2c3e50; border: 2px solid #e9ecef; }
+        .candidate .btn:hover { background: #2ecc71; color: white; border-color: #27ae60; }
+        .voter .panel-header { background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); }
+        .voter .btn { background: #f8f9fa; color: #2c3e50; border: 2px solid #e9ecef; }
+        .voter .btn:hover { background: #3498db; color: white; border-color: #2980b9; }
+        .admin .panel-header { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); }
+        .admin .btn { background: #f8f9fa; color: #2c3e50; border: 2px solid #e9ecef; }
+        .admin .btn:hover { background: #e74c3c; color: white; border-color: #c0392b; }
+        .divider { height: 1px; background: #ecf0f1; margin: 20px 0; }
+        footer { text-align: center; margin-top: 60px; color: #7f8c8d; font-size: 0.9rem; }
+        @media (max-width: 768px) { .panels { flex-direction: column; align-items: stretch; } .panel { max-width: 100%; width: 100%; } header h1 { font-size: 2rem; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>College CR & LR Election Portal</h1>
+            <p>Select your role to continue</p>
+        </header>
+
+        <div class="panels">
+            <!-- Candidate Panel -->
+            <div class="panel candidate">
+                <div class="panel-header">
+                    <span class="badge badge-open">Nominations Open</span>
+                    <h2>Candidate</h2>
+                    <p>Nominate yourself for CR or LR post</p>
+                </div>
+                <div class="panel-body">
+                    <a href="{{ url_for('candidate_register') }}" class="btn"><i>📝</i> Register as Candidate</a>
+                    <a href="{{ url_for('view_candidates') }}" class="btn"><i>👥</i> View All Candidates</a>
+                    <a href="{{ url_for('candidate_status') }}" class="btn"><i>✅</i> Check Nomination Status</a>
+                    <div class="divider"></div>
+                    <a href="#" class="btn" style="background: #2ecc71; color: white; border: none; text-align: center;" onclick="alert('Coming Soon: Campaign Dashboard')"><i>📊</i> Campaign Dashboard</a>
+                </div>
+            </div>
+
+            <!-- Voter Panel -->
+            <div class="panel voter">
+                <div class="panel-header">
+                    <span class="badge badge-active">Voting Active</span>
+                    <h2>Voter</h2>
+                    <p>Cast your vote for CR & LR</p>
+                </div>
+                <div class="panel-body">
+                    <a href="{{ url_for('voter_login') }}" class="btn"><i>🔐</i> Login / Verify Identity</a>
+                    <a href="{{ url_for('view_candidates') }}" class="btn"><i>📋</i> View Candidate Profiles</a>
+                    <a href="{{ url_for('voter_login') }}" class="btn"><i>🗳️</i> Cast Vote for CR & LR</a>
+                    <div class="divider"></div>
+                    <a href="#" class="btn" style="background: #3498db; color: white; border: none; text-align: center;" onclick="alert('Coming Soon: Check Voting Status')"><i>✓</i> Check If You Voted</a>
+                </div>
+            </div>
+
+            <!-- Admin Panel -->
+            <div class="panel admin">
+                <div class="panel-header">
+                    <span class="badge badge-admin">Admin Access</span>
+                    <h2>Admin</h2>
+                    <p>Manage election and results</p>
+                </div>
+                <div class="panel-body">
+                    <a href="{{ url_for('admin_login') }}" class="btn"><i>🔑</i> Admin Login</a>
+                    <a href="#" class="btn" onclick="alert('Coming Soon: Manage Voter List')"><i>👥</i> Manage Voter List</a>
+                    <div class="divider"></div>
+                    <a href="{{ url_for('admin_declare_results_login') }}" class="btn" style="background: #e74c3c; color: white; border: none; text-align: center;"><i>🏆</i> Declare Results</a>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>&copy; 2026 College CR & LR Election Portal. All rights reserved.</p>
+        </footer>
+    </div>
+</body>
+</html>

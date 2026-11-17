@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cast Your Vote | Election Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
+        header h1 { color: #3498db; font-size: 1.8rem; }
+        .user-info { background: white; padding: 15px 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 15px; }
+        .user-avatar { width: 40px; height: 40px; border-radius: 50%; background: #3498db; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .user-details h2 { color: #2c3e50; font-size: 1.1rem; margin-bottom: 4px; }
+        .user-details p { color: #7f8c8d; font-size: 0.85rem; }
+        .btn-logout { background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; text-decoration: none; }
+        .btn-logout:hover { background: #c0392b; }
+        .flash-message { padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.95rem; }
+        .flash-message.info { background: #cce5ff; color: #004085; border: 1px solid #b8daff; }
+        .flash-message.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .vote-card { background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 25px; }
+        .vote-card h2 { color: #2c3e50; margin-bottom: 20px; font-size: 1.3rem; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .candidate-options { display: grid; gap: 15px; margin-bottom: 25px; }
+        .candidate-option { display: flex; align-items: center; padding: 15px; border: 2px solid #e9ecef; border-radius: 10px; cursor: pointer; transition: all 0.3s; }
+        .candidate-option:hover { border-color: #3498db; background: #f8f9fa; }
+        .candidate-option input { margin-right: 15px; }
+        .candidate-avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 3px solid #e9ecef; margin-right: 15px; flex-shrink: 0; }
+        .avatar-placeholder { width: 50px; height: 50px; border-radius: 50%; background: #95a5a6; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px; flex-shrink: 0; }
+        .candidate-info { flex: 1; }
+        .candidate-info h4 { color: #2c3e50; margin-bottom: 4px; font-size: 1rem; }
+        .candidate-info p { color: #7f8c8d; font-size: 0.85rem; margin-bottom: 2px; }
+        .btn-submit { width: 100%; padding: 16px; background: #3498db; color: white; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: background 0.3s; }
+        .btn-submit:hover { background: #2980b9; }
+        .btn-submit:disabled { background: #95a5a6; cursor: not-allowed; }
+        .warning { background: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; border: 1px solid #ffeaa7; margin-bottom: 20px; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🗳️ Cast Your Vote</h1>
+            <div class="user-info">
+                <div class="user-avatar">{{ voter['name'][0] }}</div>
+                <div class="user-details">
+                    <h2>{{ voter['name'] }}</h2>
+                    <p>{{ voter['roll_no'] }}</p>
+                </div>
+            </div>
+            <a href="{{ url_for('voter_logout') }}" class="btn-logout">Logout</a>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="warning">
+            <strong>⚠️ Important:</strong> You can vote only once. After submitting, your roll number will be marked as voted and you cannot vote again.
+        </div>
+
+        <div class="vote-card">
+            <form method="POST" action="{{ url_for('cast_vote') }}" id="voteForm">
+                <h2>📋 Vote for CR (Class Representative)</h2>
+                <div class="candidate-options">
+                    {% if cr_candidates|length > 0 %}
+                        {% for candidate in cr_candidates %}
+                            <label class="candidate-option">
+                                <input type="radio" name="cr_candidate_id" value="{{ candidate['id'] }}" required>
+                                {% if candidate['photo_filename'] %}
+                                    <img src="{{ url_for('static', filename='uploads/' + candidate['photo_filename']) }}" alt="{{ candidate['name'] }}" class="candidate-avatar">
+                                {% else %}
+                                    <div class="avatar-placeholder">{{ candidate['name'][0] }}</div>
+                                {% endif %}
+                                <div class="candidate-info">
+                                    <h4>{{ candidate['name'] }}</h4>
+                                     <span class="post-badge {{ candidate['post']|lower }}">{{ candidate['post'] }}</span>
+                                    <p>{{ candidate['roll_no'] }} · {{ candidate['department'] }} · {{ candidate['year'] }}</p>
+                                </div>
+                            </label>
+                        {% endfor %}
+                    {% else %}
+                        <p style="color: #7f8c8d;">No CR candidates approved yet.</p>
+                    {% endif %}
+                </div>
+
+                <h2 style="margin-top: 30px;">📋 Vote for LR (Lady Representative)</h2>
+                <div class="candidate-options">
+                    {% if lr_candidates|length > 0 %}
+                        {% for candidate in lr_candidates %}
+                            <label class="candidate-option">
+                                <input type="radio" name="lr_candidate_id" value="{{ candidate['id'] }}" required>
+                                {% if candidate['photo_filename'] %}
+                                    <img src="{{ url_for('static', filename='uploads/' + candidate['photo_filename']) }}" alt="{{ candidate['name'] }}" class="candidate-avatar">
+                                {% else %}
+                                    <div class="avatar-placeholder">{{ candidate['name'][0] }}</div>
+                                {% endif %}
+                                <div class="candidate-info">
+                                    <h4>{{ candidate['name'] }}</h4>
+                                    <p>{{ candidate['roll_no'] }} · {{ candidate['department'] }} · {{ candidate['year'] }}</p>
+                                </div>
+                            </label>
+                        {% endfor %}
+                    {% else %}
+                        <p style="color: #7f8c8d;">No LR candidates approved yet.</p>
+                    {% endif %}
+                </div>
+
+                <button type="submit" class="btn-submit">🗳️ Cast My Vote</button>
+            </form>
+        </div>
+
+        <a href="{{ url_for('index') }}" style="display: block; text-align: center; color: #7f8c8d; text-decoration: none; margin-top: 20px;">← Back to Home</a>
+    </div>
+
+    <script>
+        document.querySelectorAll('.candidate-option').forEach(option => {
+            option.addEventListener('click', function(e) {
+                if (e.target.tagName === 'LABEL') return;
+                const radio = this.querySelector('input[type="radio"]');
+                if (radio) radio.checked = true;
+            });
+        });
+    </script>
+</body>
+</html>

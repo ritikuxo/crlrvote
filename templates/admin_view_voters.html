@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Voters | Election Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
+        header h1 { color: #2c3e50; font-size: 1.8rem; }
+        .btn-back { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; text-decoration: none; }
+        .btn-back:hover { background: #2980b9; }
+        .btn-logout { background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; text-decoration: none; }
+        .btn-logout:hover { background: #c0392b; }
+        .flash-message { padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.95rem; }
+        .flash-message.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flash-message.info { background: #cce5ff; color: #004085; border: 1px solid #b8daff; }
+        .flash-message.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }
+        .stat-card h3 { color: #7f8c8d; font-size: 0.9rem; text-transform: uppercase; margin-bottom: 10px; }
+        .stat-card .value { font-size: 2rem; font-weight: 700; }
+        .stat-card.total .value { color: #3498db; }
+        .stat-card.can-vote .value { color: #27ae60; }
+        .stat-card.rejected .value { color: #e74c3c; }
+        .table-container { background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #f1f2f6; }
+        th { background: #f8f9fa; font-weight: 700; color: #2c3e50; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        tr:hover { background: #f8f9fa; }
+        tr:last-child td { border-bottom: none; }
+        .status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-active { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-rejected { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .btn-reject { background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; margin-left: 10px; text-decoration: none; }
+        .btn-reject:hover { background: #c0392b; }
+        .btn-approve { background: #27ae60; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; margin-left: 10px; text-decoration: none; }
+        .btn-approve:hover { background: #229954; }
+        .empty { text-align: center; padding: 40px; color: #7f8c8d; }
+        .empty h3 { color: #2c3e50; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>👥 All Voters List</h1>
+            <div style="display: flex; gap: 10px;">
+                <a href="{{ url_for('admin_dashboard') }}" class="btn-back">← Back to Dashboard</a>
+                <a href="{{ url_for('admin_logout') }}" class="btn-logout">Logout</a>
+            </div>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% if voters|length > 0 %}
+        <div class="stats-grid">
+            <div class="stat-card total">
+                <h3>Total Voters</h3>
+                <div class="value">{{ voters|length }}</div>
+            </div>
+            <div class="stat-card can-vote">
+                <h3>Can Vote</h3>
+                <div class="value">{{ voters|selectattr('voter_status', 'eq', 'active')|list|length }}</div>
+            </div>
+            <div class="stat-card rejected">
+                <h3>Rejected</h3>
+                <div class="value">{{ voters|selectattr('voter_status', 'eq', 'rejected')|list|length }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="table-container">
+            {% if voters|length > 0 %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Roll Number</th>
+                        <th>Name</th>
+                        <th>Department</th>
+                        <th>Year</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for voter in voters %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td><strong>{{ voter['roll_no'] }}</strong></td>
+                        <td>{{ voter['name'] }}</td>
+                        <td>{{ voter['department'] or 'N/A' }}</td>
+                        <td>{{ voter['year'] or 'N/A' }}</td>
+                        <td>
+                            {% if voter['voter_status'] == 'active' %}
+                            <span class="status-badge status-active">✅ Can Vote</span>
+                            {% else %}
+                            <span class="status-badge status-rejected">🚫 Rejected</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if voter['voter_status'] == 'active' %}
+                            <a href="{{ url_for('admin_reject_voter', voter_id=voter['id']) }}" class="btn-reject" onclick="return confirm('Reject {{ voter['name'] }}? They will not be able to vote.')">🚫 Reject</a>
+                            {% else %}
+                            <a href="{{ url_for('admin_reject_voter', voter_id=voter['id']) }}" class="btn-approve" onclick="return confirm('Approve {{ voter['name'] }}? They will be able to vote again.')">✅ Approve</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty">
+                <h3>No Voters Found</h3>
+                <p>No voters have been added to the system yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

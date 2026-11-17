@@ -1,0 +1,546 @@
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+import sqlite3
+import os
+import re
+from datetime import datetime
+
+app = Flask(__name__)
+app.secret_key = 'college-election-secret-key-2026'
+app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # 2MB max file size
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+# Simple admin credentials (change these in production)
+ADMIN_USERNAME = 'HODCSE'
+ADMIN_PASSWORD_HASH = generate_password_hash('HODCSE@123')
+
+def get_db_connection():
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            roll_no TEXT NOT NULL UNIQUE,
+            department TEXT NOT NULL,
+            year TEXT NOT NULL,
+            photo_filename TEXT,
+            password_hash TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Migration: add status column if it doesn't exist (for existing databases)
+    try:
+        conn.execute('ALTER TABLE candidates ADD COLUMN status TEXT DEFAULT "pending"')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migration: add post column if it doesn't exist (for existing databases)
+    try:
+        conn.execute('ALTER TABLE candidates ADD COLUMN post TEXT DEFAULT "CR"')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migration: add can_register_again column if it doesn't exist (for existing databases)
+    try:
+        conn.execute('ALTER TABLE candidates ADD COLUMN can_register_again INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Create voters table
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS voters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            roll_no TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            department TEXT,
+            year TEXT,
+            has_voted INTEGER DEFAULT 0,
+            voted_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create votes table
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            roll_no TEXT NOT NULL,
+            cr_candidate_id INTEGER,
+            lr_candidate_id INTEGER,
+            voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (roll_no) REFERENCES voters(roll_no),
+            FOREIGN KEY (cr_candidate_id) REFERENCES candidates(id),
+            FOREIGN KEY (lr_candidate_id) REFERENCES candidates(id)
+        )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Initialize database on startup
+init_db()
+
+# Ensure upload folder exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+# ---------- CANDIDATE REGISTRATION ----------
+@app.route('/candidate/register', methods=['GET', 'POST'])
+def candidate_register():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        roll_no = request.form.get('roll_no')
+        department = request.form.get('department')
+        year = request.form.get('year')
+        post = request.form.get('post')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        photo = request.files.get('photo')
+
+        # Validation
+        if not all([name, roll_no, department, year, post, password, confirm_password]):
+            flash('All fields are required.', 'error')
+            return redirect(url_for('candidate_register'))
+
+        if post not in ['CR', 'LR']:
+            flash('Please select a valid post (CR or LR).', 'error')
+            return redirect(url_for('candidate_register'))
+
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return redirect(url_for('candidate_register'))
+
+        if len(password) < 6:
+            flash('Password must be at least 6 characters.', 'error')
+            return redirect(url_for('candidate_register'))
+
+        photo_filename = None
+        if photo and photo.filename != '':
+            if not allowed_file(photo.filename):
+                flash('Only image files (png, jpg, jpeg, gif) are allowed.', 'error')
+                return redirect(url_for('candidate_register'))
+            photo_filename = secure_filename(f"{roll_no}_{photo.filename}")
+
+        conn = get_db_connection()
+        try:
+            password_hash = generate_password_hash(password)
+            conn.execute(
+                'INSERT INTO candidates (name, roll_no, department, year, post, photo_filename, password_hash, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (name, roll_no, department, year, post, photo_filename, password_hash, 'pending')
+            )
+            conn.commit()
+            flash('Registration successful! Your nomination is pending admin approval.', 'info')
+            return redirect(url_for('candidate_login'))
+        except sqlite3.IntegrityError:
+            flash('A candidate with this roll number already exists.', 'error')
+            return redirect(url_for('candidate_register'))
+        finally:
+            # Save photo file if there is one
+            if photo_filename:
+                photo.seek(0)
+                photo.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
+            conn.close()
+
+    return render_template('candidate_register.html')
+
+# ---------- CANDIDATE LOGIN ----------
+@app.route('/candidate/login', methods=['GET', 'POST'])
+def candidate_login():
+    if request.method == 'POST':
+        roll_no = request.form.get('roll_no')
+        password = request.form.get('password')
+
+        if not roll_no or not password:
+            flash('Please enter both roll number and password.', 'error')
+            return redirect(url_for('candidate_login'))
+
+        conn = get_db_connection()
+        candidate = conn.execute('SELECT * FROM candidates WHERE roll_no = ?', (roll_no,)).fetchone()
+        conn.close()
+
+        if candidate and check_password_hash(candidate['password_hash'], password):
+            session['candidate_id'] = candidate['id']
+            session['candidate_name'] = candidate['name']
+            session['candidate_roll_no'] = candidate['roll_no']
+            flash(f'Welcome back, {candidate["name"]}!', 'success')
+            return redirect(url_for('candidate_dashboard'))
+        else:
+            flash('Invalid roll number or password.', 'error')
+            return redirect(url_for('candidate_login'))
+
+    return render_template('candidate_login.html')
+
+# ---------- CANDIDATE DASHBOARD ----------
+@app.route('/candidate/dashboard')
+def candidate_dashboard():
+    if 'candidate_id' not in session:
+        flash('Please login to access your dashboard.', 'error')
+        return redirect(url_for('candidate_login'))
+
+    conn = get_db_connection()
+    candidate = conn.execute('SELECT * FROM candidates WHERE id = ?', (session['candidate_id'],)).fetchone()
+    conn.close()
+
+    return render_template('candidate_dashboard.html', candidate=candidate)
+
+# ---------- CANDIDATE CHECK NOMINATION STATUS ----------
+@app.route('/candidate/status')
+def candidate_status():
+    if 'candidate_id' not in session:
+        flash('Please login to check your nomination status.', 'error')
+        return redirect(url_for('candidate_login'))
+
+    conn = get_db_connection()
+    candidate = conn.execute('SELECT * FROM candidates WHERE id = ?', (session['candidate_id'],)).fetchone()
+    conn.close()
+
+    return render_template('candidate_status.html', candidate=candidate)
+
+# ---------- CANDIDATE LOGOUT ----------
+@app.route('/candidate/logout')
+def candidate_logout():
+    session.pop('candidate_id', None)
+    session.pop('candidate_name', None)
+    session.pop('candidate_roll_no', None)
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('index'))
+
+# ---------- VIEW ALL CANDIDATES (Public - Only Approved) ----------
+@app.route('/candidates')
+def view_candidates():
+    conn = get_db_connection()
+    candidates = conn.execute('SELECT * FROM candidates WHERE status = "approved" ORDER BY created_at DESC').fetchall()
+    conn.close()
+
+    return render_template('view_candidates.html', candidates=candidates)
+
+# ---------- ADMIN LOGIN ----------
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        if username == ADMIN_USERNAME and check_password_hash(ADMIN_PASSWORD_HASH, password):
+            session['admin_logged_in'] = True
+            flash('Admin login successful.', 'success')
+            return redirect(url_for('admin_dashboard'))
+        else:
+            flash('Invalid admin credentials.', 'error')
+            return redirect(url_for('admin_login'))
+
+    return render_template('admin_login.html')
+
+# ---------- ADMIN DASHBOARD (Pending Approvals) ----------
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    if not session.get('admin_logged_in'):
+        flash('Please login as admin.', 'error')
+        return redirect(url_for('admin_login'))
+
+    conn = get_db_connection()
+    pending = conn.execute('SELECT * FROM candidates WHERE status = "pending" ORDER BY created_at ASC').fetchall()
+    approved = conn.execute('SELECT * FROM candidates WHERE status = "approved" ORDER BY created_at DESC').fetchall()
+    rejected = conn.execute('SELECT * FROM candidates WHERE status = "rejected" ORDER BY created_at DESC').fetchall()
+    total_voters = conn.execute('SELECT COUNT(*) as count FROM voters').fetchone()['count']
+    voted_count = conn.execute('SELECT COUNT(*) as count FROM voters WHERE has_voted = 1').fetchone()['count']
+    conn.close()
+
+    return render_template('admin_dashboard.html', pending=pending, approved=approved, rejected=rejected, total_voters=total_voters, voted_count=voted_count)
+
+# ---------- ADMIN VOTING RECORDS (Who Voted For Whom) ----------
+@app.route('/admin/voting-records')
+def admin_voting_records():
+    if not session.get('admin_logged_in'):
+        flash('Please login as admin.', 'error')
+        return redirect(url_for('admin_login'))
+
+    conn = get_db_connection()
+    # Join votes with voters and candidates to show who voted for whom
+    voting_records = conn.execute('''
+        SELECT v.id, v.roll_no, v.cr_candidate_id, v.lr_candidate_id, v.voted_at,
+               voters.name AS voter_name,
+               cr.post AS cr_post,
+               cr.name AS cr_candidate_name,
+               lr.name AS lr_candidate_name
+        FROM votes v
+        JOIN voters ON voters.roll_no = v.roll_no
+        LEFT JOIN candidates cr ON cr.id = v.cr_candidate_id
+        LEFT JOIN candidates lr ON lr.id = v.lr_candidate_id
+        ORDER BY v.voted_at DESC
+    ''').fetchall()
+    conn.close()
+
+    return render_template('admin_voting_records.html', voting_records=voting_records)
+
+# ---------- ADMIN REJECT A VOTE (Remove suspicious vote & reset voter) ----------
+@app.route('/admin/reject-vote/<int:vote_id>')
+def admin_reject_vote(vote_id):
+    if not session.get('admin_logged_in'):
+        flash('Please login as admin.', 'error')
+        return redirect(url_for('admin_login'))
+
+    conn = get_db_connection()
+    # Get the roll_no of the voter before deleting the vote
+    vote = conn.execute('SELECT roll_no FROM votes WHERE id = ?', (vote_id,)).fetchone()
+
+    if vote is None:
+        conn.close()
+        flash('Vote not found.', 'error')
+        return redirect(url_for('admin_voting_records'))
+
+    roll_no = vote['roll_no']
+
+    # Delete the vote record
+    conn.execute('DELETE FROM votes WHERE id = ?', (vote_id,))
+    # Reset the voter's has_voted status so they can vote again
+    conn.execute('UPDATE voters SET has_voted = 0, voted_at = NULL WHERE roll_no = ?', (roll_no,))
+    conn.commit()
+    conn.close()
+
+    flash('Vote rejected and voter status reset. The voter can vote again.', 'info')
+    return redirect(url_for('admin_voting_records'))
+
+# ---------- ADMIN APPROVE CANDIDATE ----------
+@app.route('/admin/approve/<int:candidate_id>')
+def admin_approve(candidate_id):
+    if not session.get('admin_logged_in'):
+        flash('Please login as admin.', 'error')
+        return redirect(url_for('admin_login'))
+
+    conn = get_db_connection()
+    conn.execute('UPDATE candidates SET status = "approved" WHERE id = ?', (candidate_id,))
+    conn.commit()
+    conn.close()
+
+    flash('Candidate approved successfully!', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+# ---------- ADMIN REJECT CANDIDATE ----------
+@app.route('/admin/reject/<int:candidate_id>', methods=['GET', 'POST'])
+def admin_reject(candidate_id):
+    if not session.get('admin_logged_in'):
+        flash('Please login as admin.', 'error')
+        return redirect(url_for('admin_login'))
+
+    conn = get_db_connection()
+    candidate = conn.execute('SELECT * FROM candidates WHERE id = ?', (candidate_id,)).fetchone()
+
+    if candidate is None:
+        conn.close()
+        flash('Candidate not found.', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    if request.method == 'POST':
+        # Check if admin wants to allow re-registration
+        allow_re_register = request.form.get('allow_re_register') == 'on'
+
+        # Update candidate status to rejected
+        conn.execute('UPDATE candidates SET status = "rejected", can_register_again = ? WHERE id = ?', 
+                    (1 if allow_re_register else 0, candidate_id))
+        conn.commit()
+        conn.close()
+
+        if allow_re_register:
+            flash(f'{candidate["name"]} has been rejected and permission granted to re-register.', 'info')
+        else:
+            flash(f'{candidate["name"]} has been rejected.', 'info')
+        return redirect(url_for('admin_dashboard'))
+
+    # GET request - show confirmation with re-registration option
+    conn.close()
+    return render_template('admin_reject_confirm.html', candidate=candidate)
+
+# ---------- ADMIN REMOVE CANDIDATE (Delete completely) ----------
+@app.route('/admin/remove/<int:candidate_id>')
+def admin_remove(candidate_id):
+    if not session.get('admin_logged_in'):
+        flash('Please login as admin.', 'error')
+        return redirect(url_for('admin_login'))
+
+    conn = get_db_connection()
+    # Delete any votes associated with this candidate first
+    conn.execute('DELETE FROM votes WHERE cr_candidate_id = ? OR lr_candidate_id = ?', (candidate_id, candidate_id))
+    # Delete the candidate
+    conn.execute('DELETE FROM candidates WHERE id = ?', (candidate_id,))
+    conn.commit()
+    conn.close()
+
+    flash('Candidate removed completely!', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+# ---------- ADMIN ALLOW RE-REGISTRATION ----------
+@app.route('/admin/allow-re-register/<int:candidate_id>')
+def admin_allow_re_register(candidate_id):
+    if not session.get('admin_logged_in'):
+        flash('Please login as admin.', 'error')
+        return redirect(url_for('admin_login'))
+
+    conn = get_db_connection()
+    conn.execute('UPDATE candidates SET can_register_again = 1 WHERE id = ?', (candidate_id,))
+    conn.commit()
+    conn.close()
+
+    flash('Re-registration permission granted. The candidate can now register again.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+# ---------- VOTER LOGIN ----------
+@app.route('/voter/login', methods=['GET', 'POST'])
+def voter_login():
+    if request.method == 'POST':
+        roll_no = request.form.get('roll_no', '').strip().upper()
+
+        # Validate: exactly 11 characters, uppercase letters and digits only
+        if not roll_no:
+            flash('Please enter your roll number.', 'error')
+            return redirect(url_for('voter_login'))
+
+        if len(roll_no) != 11:
+            flash('Roll number must be exactly 11 characters long.', 'error')
+            return redirect(url_for('voter_login'))
+
+        if not re.match(r'^[A-Z0-9]{11}$', roll_no):
+            flash('Roll number must be exactly 11 capital letters or digits (A-Z, 0-9) only.', 'error')
+            return redirect(url_for('voter_login'))
+
+        conn = get_db_connection()
+        voter = conn.execute('SELECT * FROM voters WHERE roll_no = ?', (roll_no,)).fetchone()
+        conn.close()
+
+        if voter:
+            session['voter_roll_no'] = voter['roll_no']
+            session['voter_name'] = voter['name']
+            flash(f'Welcome, {voter["name"]}!', 'success')
+            return redirect(url_for('voter_dashboard'))
+        else:
+            flash('Roll number not found in the voter list.', 'error')
+            return redirect(url_for('voter_login'))
+
+    return render_template('voter_login.html')
+
+# ---------- VOTER DASHBOARD (VOTE PAGE) ----------
+@app.route('/voter/dashboard')
+def voter_dashboard():
+    if 'voter_roll_no' not in session:
+        flash('Please login to vote.', 'error')
+        return redirect(url_for('voter_login'))
+
+    conn = get_db_connection()
+    voter = conn.execute('SELECT * FROM voters WHERE roll_no = ?', (session['voter_roll_no'],)).fetchone()
+
+    # Check if already voted
+    if voter['has_voted']:
+        conn.close()
+        flash('You have already voted. You cannot vote again.', 'info')
+        return render_template('voter_already_voted.html', voter=voter)
+
+    # Get approved candidates for CR and LR (filtered by post)
+    cr_candidates = conn.execute('SELECT * FROM candidates WHERE status = "approved" AND post = "CR" ORDER BY name').fetchall()
+    lr_candidates = conn.execute('SELECT * FROM candidates WHERE status = "approved" AND post = "LR" ORDER BY name').fetchall()
+    conn.close()
+
+    return render_template('voter_dashboard.html', voter=voter, cr_candidates=cr_candidates, lr_candidates=lr_candidates)
+
+# ---------- CAST VOTE ----------
+@app.route('/voter/vote', methods=['POST'])
+def cast_vote():
+    if 'voter_roll_no' not in session:
+        flash('Please login to vote.', 'error')
+        return redirect(url_for('voter_login'))
+
+    roll_no = session['voter_roll_no']
+    cr_candidate_id = request.form.get('cr_candidate_id')
+    lr_candidate_id = request.form.get('lr_candidate_id')
+
+    conn = get_db_connection()
+    voter = conn.execute('SELECT * FROM voters WHERE roll_no = ?', (roll_no,)).fetchone()
+
+    if voter['has_voted']:
+        conn.close()
+        flash('You have already voted. You cannot vote again.', 'error')
+        return redirect(url_for('voter_dashboard'))
+
+    # Record the vote
+    conn.execute(
+        'INSERT INTO votes (roll_no, cr_candidate_id, lr_candidate_id, voted_at) VALUES (?, ?, ?, ?)',
+        (roll_no, cr_candidate_id if cr_candidate_id else None, lr_candidate_id if lr_candidate_id else None, datetime.now())
+    )
+    # Mark voter as voted
+    conn.execute('UPDATE voters SET has_voted = 1, voted_at = ? WHERE roll_no = ?', (datetime.now(), roll_no))
+    conn.commit()
+    conn.close()
+
+    session.pop('voter_roll_no', None)
+    session.pop('voter_name', None)
+    flash('Your vote has been cast successfully! Thank you for participating.', 'success')
+    return redirect(url_for('index'))
+
+# ---------- VOTER LOGOUT ----------
+@app.route('/voter/logout')
+def voter_logout():
+    session.pop('voter_roll_no', None)
+    session.pop('voter_name', None)
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('index'))
+
+# ---------- ADMIN: ADD VOTERS ----------
+@app.route('/admin/add-voters', methods=['GET', 'POST'])
+def admin_add_voters():
+    if not session.get('admin_logged_in'):
+        flash('Please login as admin.', 'error')
+        return redirect(url_for('admin_login'))
+
+    if request.method == 'POST':
+        roll_numbers = request.form.get('roll_numbers')
+        names = request.form.get('names')
+
+        if not roll_numbers:
+            flash('Please enter roll numbers.', 'error')
+            return redirect(url_for('admin_add_voters'))
+
+        roll_list = [r.strip() for r in roll_numbers.replace('\n', ',').split(',') if r.strip()]
+        name_list = [n.strip() for n in names.replace('\n', ',').split(',')] if names else []
+
+        conn = get_db_connection()
+        added = 0
+        skipped = 0
+        for i, roll in enumerate(roll_list):
+            name = name_list[i] if i < len(name_list) else f'Student {roll}'
+            try:
+                conn.execute('INSERT INTO voters (roll_no, name, has_voted) VALUES (?, ?, 0)', (roll, name))
+                added += 1
+            except sqlite3.IntegrityError:
+                skipped += 1
+        conn.commit()
+        conn.close()
+
+        flash(f'Added {added} voter(s). {skipped} already existed.', 'success')
+        return redirect(url_for('admin_dashboard'))
+
+    return render_template('admin_add_voters.html')
+
+# ---------- ADMIN LOGOUT ----------
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_logged_in', None)
+    flash('Admin logged out.', 'info')
+    return redirect(url_for('index'))
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)

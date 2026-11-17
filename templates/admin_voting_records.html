@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voting Records | Election Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
+        header h1 { color: #8e44ad; font-size: 1.8rem; }
+        .btn-back { background: #95a5a6; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; text-decoration: none; }
+        .btn-back:hover { background: #7f8c8d; }
+        .flash-message { padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.95rem; }
+        .flash-message.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flash-message.info { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }
+        .stat-card h3 { color: #7f8c8d; font-size: 0.9rem; text-transform: uppercase; margin-bottom: 10px; }
+        .stat-card .value { font-size: 2rem; font-weight: 700; }
+        .stat-card.total { border-top: 4px solid #3498db; }
+        .stat-card.total .value { color: #2980b9; }
+        .stat-card.cr { border-top: 4px solid #27ae60; }
+        .stat-card.cr .value { color: #27ae60; }
+        .stat-card.lr { border-top: 4px solid #e74c3c; }
+        .stat-card.lr .value { color: #e74c3c; }
+        .table-wrapper { background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 15px 20px; text-align: left; border-bottom: 1px solid #f1f2f6; }
+        th { background: #f8f9fa; color: #2c3e50; font-weight: 700; font-size: 0.9rem; text-transform: uppercase; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background: #f8f9fa; }
+        .empty { text-align: center; padding: 40px 20px; color: #7f8c8d; }
+        .empty h3 { color: #95a5a6; margin-bottom: 8px; }
+        @media (max-width: 768px) { table { font-size: 0.85rem; } th, td { padding: 10px 12px; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Voting Records</h1>
+            <a href="{{ url_for('admin_dashboard') }}" class="btn-back">← Back to Dashboard</a>
+        </header>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="stats-grid">
+            <div class="stat-card total">
+                <h3>Total Votes Cast</h3>
+                <div class="value">{{ voting_records|length }}</div>
+            </div>
+            <div class="stat-card cr">
+                <h3>CR Votes</h3>
+                <div class="value">{{ voting_records|selectattr('cr_candidate_id')|list|length }}</div>
+            </div>
+            <div class="stat-card lr">
+                <h3>LR Votes</h3>
+                <div class="value">{{ voting_records|selectattr('lr_candidate_id')|list|length }}</div>
+            </div>
+        </div>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Student Name</th>
+                        <th>Roll No</th>
+                        <th>Voted For (CR)</th>
+                        <th>Voted For (LR)</th>
+                          <th>Post</th>
+                        <th>Voted At</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if voting_records|length > 0 %}
+                        {% for record in voting_records %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td><strong>{{ record['voter_name'] }}</strong></td>
+                                <td>{{ record['roll_no'] }}</td>
+                                <td>
+                                    {% if record['cr_candidate_name'] %}
+                                        {{ record['cr_candidate_name'] }}
+                                    {% else %}
+                                        <span style="color:#95a5a6;">Not voted</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if record['lr_candidate_name'] %}
+                                        {{ record['lr_candidate_name'] }}
+                                    {% else %}
+                                        <span style="color:#95a5a6;">Not voted</span>
+                                    {% endif %}
+                                    <td><span class="post-badge">{{ record['cr_post'] }}</span></td>
+                                </td>
+                                <td>{{ record['voted_at'][:16] if record['voted_at'] else '—' }}</td>
+                                <td>
+                                    <a href="{{ url_for('admin_reject_vote', vote_id=record['id']) }}" class="btn-reject" onclick="return confirm('Reject this vote? The voter will be able to vote again.')">Reject Vote</a>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="empty">
+                                <h3>No voting records found</h3>
+                                <p>No votes have been cast yet.</p>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

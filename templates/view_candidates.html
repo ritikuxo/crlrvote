@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Candidates | Election Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
+        header h1 { color: #27ae60; font-size: 1.8rem; }
+        .btn-back { background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; text-decoration: none; }
+        .btn-back:hover { background: #2ecc71; }
+        .flash-message { padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.95rem; }
+        .flash-message.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flash-message.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .flash-message.info { background: #cce5ff; color: #004085; border: 1px solid #b8daff; }
+        .candidates-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; }
+        .candidate-card { background: white; border-radius: 16px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transition: transform 0.3s; border: 2px solid #e9ecef; }
+        .candidate-card:hover { transform: translateY(-5px); border-color: #27ae60; box-shadow: 0 8px 25px rgba(0,0,0,0.12); }
+        .candidate-avatar { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 4px solid #27ae60; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto; }
+        .avatar-placeholder { width: 80px; height: 80px; border-radius: 50%; background: #27ae60; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem; margin: 0 auto 15px auto; }
+        .candidate-card h3 { color: #2c3e50; font-size: 1.25rem; margin-bottom: 5px; text-align: center; }
+        .candidate-card .roll-no { color: #7f8c8d; font-size: 0.9rem; text-align: center; margin-bottom: 15px; display: block; }
+        .candidate-card .detail { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f2f6; font-size: 0.95rem; }
+        .candidate-card .detail:last-child { border-bottom: none; }
+        .candidate-card .detail-label { color: #7f8c8d; font-weight: 600; }
+        .candidate-card .detail-value { color: #2c3e50; }
+        .empty-state { text-align: center; padding: 60px 20px; background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .empty-state h2 { color: #7f8c8d; margin-bottom: 10px; }
+        .empty-state p { color: #95a5a6; }
+        .total-count { color: #27ae60; font-weight: 700; font-size: 1.1rem; }
+        @media (max-width: 600px) { header { flex-direction: column; align-items: stretch; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>👥 All Candidates</h1>
+            <a href="{{ url_for('index') }}" class="btn-back">← Back to Home</a>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% if candidates|length > 0 %}
+            <div style="margin-bottom: 20px;">
+                <span class="total-count">{{ candidates|length }}</span> candidate(s) nominated
+            </div>
+            <div class="candidates-grid">
+                {% for candidate in candidates %}
+                    <div class="candidate-card">
+                        {% if candidate['photo_filename'] %}
+                            <img src="{{ url_for('static', filename='uploads/' + candidate['photo_filename']) }}" alt="{{ candidate['name'] }}" class="candidate-avatar">
+                        {% else %}
+                            <div class="avatar-placeholder">{{ candidate['name'][0] }}</div>
+                        {% endif %}
+                        <h3>{{ candidate['name'] }}</h3>
+                        <span class="roll-no">{{ candidate['roll_no'] }}</span>
+                        <div class="detail">
+                            <span class="detail-label">Department:</span>
+                            <span class="detail-value">{{ candidate['department'] }}</span>
+                        </div>
+                        <div class="detail">
+                            <span class="detail-label">Year:</span>
+                            <span class="detail-value">{{ candidate['year'] }}</span>
+                        </div>
+                        <div class="detail">
+                            <span class="detail-label">Post:</span>
+                            <span class="detail-value"><span class="post-badge {{ candidate['post']|lower }}">{{ candidate['post'] }}</span></span>
+                        </div>
+                        <div class="detail">
+                            <span class="detail-label">Nominated on:</span>
+                            <span class="detail-value">{{ candidate['created_at'][:10] }}</span>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <h2>No candidates yet</h2>
+                <p>No one has nominated for CR/LR posts yet.</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

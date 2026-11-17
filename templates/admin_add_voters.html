@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Voters | Admin Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
+        header h1 { color: #e74c3c; font-size: 1.8rem; }
+        .btn-back { background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; text-decoration: none; }
+        .btn-back:hover { background: #c0392b; }
+        .card { background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #2c3e50; font-size: 0.95rem; }
+        .form-group textarea, .form-group input { width: 100%; padding: 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 1rem; transition: border-color 0.3s; font-family: inherit; }
+        .form-group textarea:focus, .form-group input:focus { outline: none; border-color: #e74c3c; }
+        .btn-submit { width: 100%; padding: 14px; background: #e74c3c; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.3s; }
+        .btn-submit:hover { background: #c0392b; }
+        .flash-message { padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 0.95rem; }
+        .flash-message.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flash-message.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .hint { margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef; font-size: 0.85rem; color: #7f8c8d; }
+        .hint strong { color: #2c3e50; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>👥 Add Voters</h1>
+            <a href="{{ url_for('admin_dashboard') }}" class="btn-back">← Back to Dashboard</a>
+        </header>
+
+        <div class="card">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="flash-message {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST">
+                <div class="form-group">
+                    <label for="roll_numbers">Roll Numbers (one per line or comma-separated)</label>
+                    <textarea id="roll_numbers" name="roll_numbers" rows="6" placeholder="25CS001
+25CS002
+25CS003" required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="names">Student Names (optional, one per line)</label>
+                    <textarea id="names" name="names" rows="6" placeholder="Rahul Sharma
+Priya Singh
+Amit Kumar"></textarea>
+                </div>
+
+                <button type="submit" class="btn-submit">Add Voters</button>
+            </form>
+
+            <div class="hint">
+                <strong>Tip:</strong> Enter roll numbers one per line. Names are optional - if skipped, default names like "Student 25CS001" will be used.
+            </div>
+        </div>
+    </div>
+</body>
+</html>
